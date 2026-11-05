@@ -132,4 +132,20 @@ A running log of what has been built and how. Newest entries at the bottom.
 - **How it was tested:** a disposable demo workspace (`npm run sandbox`) with its own temporary schema, email off, and demo data (4 people, 22 tasks, 3 sprints, 2 milestones, pages, comments). I signed in as admin and viewer, opened every screen, created a task, wrote a comment with an @mention, dragged a task between sprints, edited a page in split view (autosave verified on the server), and checked dark mode and phone width. Bugs found and fixed along the way: a CSS name clash that stretched unassigned avatars, a bad import that stopped the slide-over, blank chart output, timeline bars too small to read, mobile list alignment, and a refresh scheduler that stalled in background tabs.
 - **Email:** Google SMTP login was verified (authentication only, no mail sent).
 
-**What is left:** deployment to the VPS (nginx, HTTPS for projects.denzelchiu.me, running the server as a service) and a first real run: create your admin account, invite the team.
+**What is left:** point DNS at the server, switch on HTTPS for projects.denzelchiu.me, and do a first real run: create your admin account, invite the team.
+
+## 9. Deployment to the VPS (app running, public address pending DNS)
+**What:** The code lives on GitHub (`Denzel29/proj-management`) and runs on the VPS in Docker.
+**How:**
+- **Git:** the local project is a Git repo with `origin` set to the GitHub URL, and the code is pushed to `main`. `.env`, uploads and `node_modules` are ignored, so no secrets are in the repo. A `.gitattributes` keeps LF line endings so shell scripts work on Linux. The server cloned it into `~/forge`.
+- **What I found on the server (read-only first):** Ubuntu 24.04, Docker, no Node and no nginx, and no passwordless sudo. Ports 80 and 443 already belong to a Caddy container from your other app (apptracker, in `~/apptracker/Deploy`).
+- **Decision (yours):** run Forge in Docker with its own Postgres container, behind that existing Caddy. This needed no sudo, left your host Postgres and apptracker untouched, and lets Caddy handle HTTPS certificates.
+- **Files added:**
+  - `Dockerfile`: Node 22 image, installs dependencies, runs as the non-root `node` user, applies database migrations then starts the server.
+  - `docker-compose.yml`: `forge` and `db` (Postgres 16) with persistent volumes for the database and uploaded files, health checks, memory limits, log rotation. The database has no published port. The app joins Caddy's network (`deploy_default`) under the alias `forge-app`.
+  - `.env.production.example`: the settings to fill in on the server.
+  - `deploy/update.sh`: `git pull` + rebuild + restart for future updates.
+  - `deploy/Caddyfile.snippet`: the block to add to Caddy for `projects.denzelchiu.me`.
+  - `package.json`: `prisma` moved to runtime dependencies so the container can run migrations.
+- **On the server:** `.env` was created with a generated database password (mode 600, never shown or committed). Containers were built and started: both healthy, migrations `init` and `drop_mention` applied, and the app answers on `forge-app:3000` from inside the Caddy container. The apptracker containers kept running throughout.
+- **Still to do:** (1) DNS `A` record `projects.denzelchiu.me` to `62.171.178.11`; (2) fill `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` in `~/forge/.env` on the server and recreate the app container; (3) add the Caddy block and reload it (graceful, no downtime), then check HTTPS; (4) first-run setup at the live address.

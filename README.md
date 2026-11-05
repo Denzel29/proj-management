@@ -27,6 +27,23 @@ the address, and you become the admin. After that, invite the team from **Team**
 | `npm run db:migrate:dev` | Create a migration after editing `prisma/schema.prisma` |
 | `npm run db:studio` | Browse the database |
 
+## Deploy (VPS, Docker)
+
+Forge runs as two containers (the app and its own Postgres) next to the existing Caddy, which provides HTTPS.
+Files: `Dockerfile`, `docker-compose.yml`, `.env.production.example`, `deploy/`.
+
+```bash
+ssh apptracker
+cd ~/forge
+cp .env.production.example .env     # first time only: set POSTGRES_PASSWORD, SMTP_USER, SMTP_PASS, MAIL_FROM
+docker compose up -d --build        # start (migrations run automatically)
+./deploy/update.sh                  # later: pull the latest code and restart
+docker compose logs -f forge        # watch the app
+```
+
+To publish on a domain, point its DNS `A` record at the server, then add the block from
+`deploy/Caddyfile.snippet` to the Caddyfile that Caddy uses and reload it (commands are in the snippet).
+
 ## Configuration (`.env`)
 
 See `.env.example`. Secrets live only in `.env` on the machine that runs the server, never in git.
