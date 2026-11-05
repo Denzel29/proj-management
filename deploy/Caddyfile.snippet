@@ -1,8 +1,8 @@
 # Add this block to ~/apptracker/Deploy/Caddyfile, then reload Caddy:
 #   docker exec deploy-caddy-1 caddy validate --config /etc/caddy/Caddyfile
 #   docker exec deploy-caddy-1 caddy reload   --config /etc/caddy/Caddyfile
-# DNS for projects.denzelchiu.me must already point at this server so Caddy can get a certificate.
-projects.denzelchiu.me {
+# DNS for msforge.denzelchiu.me must already point at this server so Caddy can get a certificate.
+msforge.denzelchiu.me {
 	encode zstd gzip
 
 	header {

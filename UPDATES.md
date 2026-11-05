@@ -9,7 +9,7 @@ A running log of what has been built and how. Newest entries at the bottom.
 **How:**
 - Wrote `PLAN.md` (features, architecture, tables, build order, design direction).
 - Reviewed the two Dribbble samples: LunarDesk (grouped list view, app shell) and ChronoTask (board cards, right-hand task slide-over). Decided to combine them, with a **teal** accent.
-- Decisions: PostgreSQL on the VPS, login with Admin / Member / Viewer roles, Admin invites people by email link, real-time updates (WebSockets), audit log, in-app + email notifications via Google SMTP, domain `projects.denzelchiu.me` (configured at the end), Notion-style Home page, no backups in scope.
+- Decisions: PostgreSQL on the VPS, login with Admin / Member / Viewer roles, Admin invites people by email link, real-time updates (WebSockets), audit log, in-app + email notifications via Google SMTP, domain `msforge.denzelchiu.me` (configured at the end), Notion-style Home page, no backups in scope.
 
 ## 2. Backend scaffold (done, being ported to Prisma)
 **What:** Express server skeleton and supporting modules.
@@ -132,7 +132,7 @@ A running log of what has been built and how. Newest entries at the bottom.
 - **How it was tested:** a disposable demo workspace (`npm run sandbox`) with its own temporary schema, email off, and demo data (4 people, 22 tasks, 3 sprints, 2 milestones, pages, comments). I signed in as admin and viewer, opened every screen, created a task, wrote a comment with an @mention, dragged a task between sprints, edited a page in split view (autosave verified on the server), and checked dark mode and phone width. Bugs found and fixed along the way: a CSS name clash that stretched unassigned avatars, a bad import that stopped the slide-over, blank chart output, timeline bars too small to read, mobile list alignment, and a refresh scheduler that stalled in background tabs.
 - **Email:** Google SMTP login was verified (authentication only, no mail sent).
 
-**What is left:** point DNS at the server, switch on HTTPS for projects.denzelchiu.me, and do a first real run: create your admin account, invite the team.
+**What is left:** point DNS at the server, switch on HTTPS for msforge.denzelchiu.me, and do a first real run: create your admin account, invite the team.
 
 ## 9. Deployment to the VPS (app running, public address pending DNS)
 **What:** The code lives on GitHub (`Denzel29/proj-management`) and runs on the VPS in Docker.
@@ -145,7 +145,7 @@ A running log of what has been built and how. Newest entries at the bottom.
   - `docker-compose.yml`: `forge` and `db` (Postgres 16) with persistent volumes for the database and uploaded files, health checks, memory limits, log rotation. The database has no published port. The app joins Caddy's network (`deploy_default`) under the alias `forge-app`.
   - `.env.production.example`: the settings to fill in on the server.
   - `deploy/update.sh`: `git pull` + rebuild + restart for future updates.
-  - `deploy/Caddyfile.snippet`: the block to add to Caddy for `projects.denzelchiu.me`.
+  - `deploy/Caddyfile.snippet`: the block to add to Caddy for `msforge.denzelchiu.me`.
   - `package.json`: `prisma` moved to runtime dependencies so the container can run migrations.
 - **On the server:** `.env` was created with a generated database password (mode 600, never shown or committed). Containers were built and started: both healthy, migrations `init` and `drop_mention` applied, and the app answers on `forge-app:3000` from inside the Caddy container. The apptracker containers kept running throughout.
-- **Still to do:** (1) DNS `A` record `projects.denzelchiu.me` to `62.171.178.11`; (2) fill `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` in `~/forge/.env` on the server and recreate the app container; (3) add the Caddy block and reload it (graceful, no downtime), then check HTTPS; (4) first-run setup at the live address.
+- **Still to do:** (1) DNS `A` record `msforge.denzelchiu.me` to `62.171.178.11`; (2) fill `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` in `~/forge/.env` on the server and recreate the app container; (3) add the Caddy block and reload it (graceful, no downtime), then check HTTPS; (4) first-run setup at the live address.

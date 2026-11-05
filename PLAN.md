@@ -144,7 +144,7 @@ Browser (SPA)  <--HTTPS-->  nginx (TLS, static files, reverse proxy)
 - Notifications: in-app + email. Accounts: Admin invites, invitee signs up via link.
 
 ## 7. Deployment details
-- Domain: **projects.denzelchiu.me** (DNS A record to the VPS, nginx + Let's Encrypt). Configured at the end; `APP_URL` drives all email links.
+- Domain: **msforge.denzelchiu.me** (DNS A record to the VPS, nginx + Let's Encrypt). Configured at the end; `APP_URL` drives all email links.
 - Email: **Google SMTP** (smtp.gmail.com). Needs a Google App Password (2-Step Verification on); Gmail caps sending at roughly 500 messages/day for personal accounts (2,000 for Workspace), which is plenty for a small team. The queue batches notification emails to stay well under that.
 - Still needed at deploy time, kept in environment variables and never in the repo: Postgres connection string for the VPS, the Gmail address and app password, session secret.
 - For local testing I need a connection string to a local Postgres database (a Postgres 17 service is already running on this machine, I just don't have its credentials).
