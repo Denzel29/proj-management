@@ -1,0 +1,413 @@
+// Forge PM data model. Run `npm run db:migrate:dev` locally to create migrations,
+// and `npm run db:migrate` on the server to apply them.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  member
+  viewer
+}
+
+enum StatusCategory {
+  todo
+  doing
+  done
+}
+
+enum TaskType {
+  task
+  story
+  bug
+  improvement
+  epic
+}
+
+enum Priority {
+  low
+  medium
+  high
+  critical
+}
+
+enum SprintStatus {
+  planned
+  active
+  completed
+}
+
+enum MilestoneStatus {
+  open
+  completed
+}
+
+enum LinkType {
+  blocks
+  relates
+  duplicates
+}
+
+enum EmailKind {
+  transactional
+  notification
+}
+
+enum EmailStatus {
+  pending
+  sent
+  failed
+}
+
+// ---------- Accounts ----------
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique            // always stored lowercase
+  name         String
+  role         Role      @default(member)
+  color        String    @default("#0f9d92")
+  active       Boolean   @default(true)
+  prefs        Json      @default("{}")
+  createdAt    DateTime  @default(now())
+  lastSeenAt   DateTime?
+  sessions     Session[]
+}
+
+model Session {
+  id        String   @id                    // sha256 of the cookie token
+  userId    String   @db.Uuid
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+
+model Invite {
+  id         String    @id @default(uuid()) @db.Uuid
+  email      String
+  role       Role      @default(member)
+  tokenHash  String    @unique
+  invitedBy  String?   @db.Uuid
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+// Passwordless sign-in. kind "code": a 6-digit code emailed to the person (hash of email+code stored,
+// limited attempts). kind "link": a one-time sign-in link an admin can generate as a fallback.
+model LoginToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  email     String
+  kind      String                                    // "code" | "link"
+  tokenHash String
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  @@index([email, kind, createdAt(sort: Desc)])
+  @@index([tokenHash])
+}
+
+model EmailQueue {
+  id        String      @id @default(uuid()) @db.Uuid
+  toEmail   String
+  userId    String?     @db.Uuid
+  kind      EmailKind   @default(transactional)
+  subject   String
+  textBody  String      @default("")
+  htmlBody  String      @default("")
+  payload   Json        @default("{}")
+  status    EmailStatus @default(pending)
+  attempts  Int         @default(0)
+  lastError String?
+  sendAfter DateTime    @default(now())
+  sentAt    DateTime?
+  createdAt DateTime    @default(now())
+  @@index([status, sendAfter])
+}
+
+// ---------- Project structure ----------
+model Project {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  key         String   @unique
+  description String   @default("")
+  nextTaskNum Int      @default(1)
+  settings    Json     @default("{\"sprintWeeks\":2,\"maxSubtaskDepth\":3}")
+  createdAt   DateTime @default(now())
+  statuses    Status[]
+  labels      Label[]
+  sprints     Sprint[]
+  milestones  Milestone[]
+  tasks       Task[]
+  templates   TaskTemplate[]
+  pages       Page[]
+}
+
+model Status {
+  id        String         @id @default(uuid()) @db.Uuid
+  projectId String         @db.Uuid
+  name      String
+  category  StatusCategory
+  color     String         @default("#64748b")
+  position  Int            @default(0)
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+}
+
+model Label {
+  id        String      @id @default(uuid()) @db.Uuid
+  projectId String      @db.Uuid
+  name      String
+  color     String      @default("#0f9d92")
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks     TaskLabel[]
+  @@unique([projectId, name])
+}
+
+model Sprint {
+  id          String       @id @default(uuid()) @db.Uuid
+  projectId   String       @db.Uuid
+  name        String
+  goal        String       @default("")
+  startDate   DateTime?    @db.Date
+  endDate     DateTime?    @db.Date
+  status      SprintStatus @default(planned)
+  snapshot    Json?                         // committed/completed points recorded at completion
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks       Task[]
+  // A partial unique index (one active sprint per project) is added in the migration SQL.
+}
+
+model Milestone {
+  id          String          @id @default(uuid()) @db.Uuid
+  projectId   String          @db.Uuid
+  name        String
+  description String          @default("")
+  dueDate     DateTime?       @db.Date
+  status      MilestoneStatus @default(open)
+  createdAt   DateTime        @default(now())
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks       Task[]
+}
+
+// ---------- Tasks ----------
+model Task {
+  id          String    @id @default(uuid()) @db.Uuid
+  projectId   String    @db.Uuid
+  num         Int
+  title       String
+  description String    @default("")
+  type        TaskType  @default(task)
+  statusId    String    @db.Uuid
+  priority    Priority  @default(medium)
+  assigneeId  String?   @db.Uuid
+  reporterId  String?   @db.Uuid
+  parentId    String?   @db.Uuid
+  sprintId    String?   @db.Uuid
+  milestoneId String?   @db.Uuid
+  points      Float?
+  estimateMin Int?
+  startDate   DateTime? @db.Date
+  dueDate     DateTime? @db.Date
+  rank        Float     @default(0)
+  version     Int       @default(1)
+  recurrence  Json?                         // {"every":1,"unit":"week"}
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now())
+
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status      Status     @relation(fields: [statusId], references: [id])
+  parent      Task?      @relation("Subtasks", fields: [parentId], references: [id], onDelete: Cascade)
+  children    Task[]     @relation("Subtasks")
+  sprint      Sprint?    @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  milestone   Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  labels      TaskLabel[]
+  watchers    TaskWatcher[]
+  linksFrom   TaskLink[] @relation("LinkFrom")
+  linksTo     TaskLink[] @relation("LinkTo")
+  timeLogs    TimeLog[]
+
+  @@unique([projectId, num])
+  @@index([statusId])
+  @@index([assigneeId])
+  @@index([sprintId])
+  @@index([milestoneId])
+  @@index([parentId])
+  @@index([dueDate])
+}
+
+model TaskLabel {
+  taskId  String @db.Uuid
+  labelId String @db.Uuid
+  task    Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label   Label  @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  @@id([taskId, labelId])
+}
+
+model TaskWatcher {
+  taskId String @db.Uuid
+  userId String @db.Uuid
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  @@id([taskId, userId])
+}
+
+model TaskLink {
+  id         String   @id @default(uuid()) @db.Uuid
+  fromTaskId String   @db.Uuid
+  toTaskId   String   @db.Uuid
+  type       LinkType
+  createdBy  String?  @db.Uuid
+  createdAt  DateTime @default(now())
+  from       Task     @relation("LinkFrom", fields: [fromTaskId], references: [id], onDelete: Cascade)
+  to         Task     @relation("LinkTo", fields: [toTaskId], references: [id], onDelete: Cascade)
+  @@unique([fromTaskId, toTaskId, type])
+}
+
+model TaskTemplate {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @db.Uuid
+  name      String
+  data      Json     @default("{}")         // title, type, priority, labelIds, description, points, subtasks[]
+  createdBy String?  @db.Uuid
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model TimeLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  taskId    String   @db.Uuid
+  userId    String   @db.Uuid
+  minutes   Int
+  note      String   @default("")
+  loggedOn  DateTime @default(now()) @db.Date
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  @@index([taskId])
+}
+
+// ---------- Pages ----------
+model Page {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @db.Uuid
+  title     String   @default("Untitled")
+  icon      String   @default("📄")
+  parentId  String?  @db.Uuid
+  content   String   @default("")
+  position  Float    @default(0)
+  createdBy String?  @db.Uuid
+  updatedBy String?  @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent    Page?    @relation("PageTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Page[]   @relation("PageTree")
+  @@index([parentId])
+}
+
+// ---------- Collaboration ----------
+model Comment {
+  id         String            @id @default(uuid()) @db.Uuid
+  targetType String                                   // "task" | "page"
+  targetId   String            @db.Uuid
+  parentId   String?           @db.Uuid               // thread reply
+  authorId   String?           @db.Uuid
+  body       String
+  createdAt  DateTime          @default(now())
+  editedAt   DateTime?
+  deletedAt  DateTime?
+  parent     Comment?          @relation("Thread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies    Comment[]         @relation("Thread")
+  reactions  CommentReaction[]
+  @@index([targetType, targetId, createdAt])
+}
+
+model CommentReaction {
+  commentId String   @db.Uuid
+  userId    String   @db.Uuid
+  emoji     String
+  createdAt DateTime @default(now())
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  @@id([commentId, userId, emoji])
+}
+
+model Attachment {
+  id          String   @id @default(uuid()) @db.Uuid
+  targetType  String                                  // "task" | "comment" | "page"
+  targetId    String   @db.Uuid
+  fileName    String
+  mime        String
+  sizeBytes   Int
+  storageKey  String
+  uploaderId  String?  @db.Uuid
+  createdAt   DateTime @default(now())
+  @@index([targetType, targetId])
+}
+
+model Notification {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  type       String                                   // mention, assigned, watched_update, reply, due_soon, overdue
+  actorId    String?   @db.Uuid
+  entityType String                                   // task, page, comment
+  entityId   String    @db.Uuid
+  data       Json      @default("{}")
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, readAt])
+}
+
+// ---------- Personal ----------
+model SavedFilter {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  name      String
+  scope     String   @default("tasks")
+  filter    Json     @default("{}")
+  createdAt DateTime @default(now())
+  @@index([userId])
+}
+
+model Favorite {
+  userId     String @db.Uuid
+  entityType String                                    // page | task | sprint | milestone
+  entityId   String @db.Uuid
+  position   Float  @default(0)
+  @@id([userId, entityType, entityId])
+}
+
+model RecentVisit {
+  userId     String   @db.Uuid
+  entityType String
+  entityId   String   @db.Uuid
+  visitedAt  DateTime @default(now())
+  @@id([userId, entityType, entityId])
+  @@index([userId, visitedAt(sort: Desc)])
+}
+
+// ---------- Audit ----------
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  actorId    String?  @db.Uuid
+  action     String                                    // task.create, task.update, sprint.start, user.update ...
+  entityType String
+  entityId   String?  @db.Uuid
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+  @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+}
