@@ -193,7 +193,7 @@ export function list() {
       <div class="row"><label class="muted sm" for="gb">Group by</label><select id="gb" class="select sm" style="width:auto" data-change="group-by">${[['status', 'Status'], ['assignee', 'Assignee'], ['priority', 'Priority'], ['sprint', 'Sprint'], ['milestone', 'Milestone'], ['none', 'None']].map(([k, l]) => h`<option value="${k}" ${sel(k, groupBy.value)}>${l}</option>`)}</select>
       <button class="btn sm" data-act="export-csv">${icon('download', 14)} Export CSV</button></div></div>
     ${filterBar()}
-    ${!S.tasks.length ? h`<div class="card">${empty('list', 'No tasks yet', 'Create your first task to get started.', addBtn())}</div>` : groups.map((g) => h`
+    ${!S.tasks.length ? h`<div class="card">${empty('list', 'No tasks yet', canWrite() ? 'Create your first task to get started.' : 'Tasks will appear here once your team adds them.', addBtn())}</div>` : groups.map((g) => h`
       <section class="card group ${collapsed.has(g.key) ? 'closed' : ''}">
         <div class="group-head" data-act="group-toggle" data-key="${g.key}">${icon('chevD', 16, 'twist')}<span class="gtag" style="--c:${g.color}">${g.label}</span><span class="count-badge">${g.tasks.length}</span></div>
         <div class="tbl drop-zone" ${g.drop && canWrite() ? raw(`data-drop="${g.drop}"`) : ''}>${headRow()}${sorted(g.tasks).map((t) => row(t))}${g.tasks.length ? '' : h`<div class="trow" style="--cols:1fr"><span class="faint">${g.drop ? 'Drop tasks here' : 'Nothing here'}</span></div>`}</div>

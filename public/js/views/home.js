@@ -54,7 +54,7 @@ export default function home() {
 
   const body = h`<div class="page-narrow">
     <div class="hero"><h1>${greeting()}, ${first}</h1><p>${new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })} · ${S.project.name}</p></div>
-    ${canWrite() ? h`<div class="quick"><button class="btn primary" data-act="home-task">${icon('plus', 16)} New task</button><button class="btn" data-act="home-page">${icon('doc', 16)} New page</button><button class="btn" data-act="home-sprint">${icon('bolt', 16)} New sprint</button></div>` : '<div style="height:18px"></div>'}
+    ${canWrite() ? h`<div class="quick"><button class="btn primary" data-act="home-task">${icon('plus', 16)} New task</button><button class="btn" data-act="home-page">${icon('doc', 16)} New page</button><button class="btn" data-act="home-sprint">${icon('bolt', 16)} New sprint</button></div>` : h`<div style="height:18px"></div>`}
 
     ${act ? h`<div class="banner"><div class="grow"><h3>${act.name} is active</h3><small>${act.goal || 'No sprint goal set'}${left != null ? ` · ${left < 0 ? `${-left} day${left === -1 ? '' : 's'} overdue` : left === 0 ? 'ends today' : `${left} day${left === 1 ? '' : 's'} left`}` : ''}</small>
       <div class="bar" style="margin-top:10px;max-width:420px"><i style="width:${pct}%"></i></div><small>${sprintTasks.filter(isDone).length} of ${sprintTasks.length} tasks done</small></div><a class="btn" href="#/board">Open board</a></div>` : ''}
@@ -68,7 +68,7 @@ export default function home() {
         <div><div class="sec-title">${icon('bell', 14)} Mentions &amp; updates <a class="right xs" href="#/inbox">See all</a></div><div class="card">${!S.notifications ? h`<div class="empty"><p>Loading...</p></div>` : feed.length ? feed.map(feedItem) : empty('inbox', 'No updates yet', 'Mentions and changes on tasks you follow appear here.')}</div></div>
         ${upcoming.length ? h`<div><div class="sec-title">${icon('flag', 14)} Upcoming milestones <a class="right xs" href="#/milestones">See all</a></div><div class="card">${upcoming.map((m) => h`<a class="mini-task" href="#/milestones" style="color:inherit;text-decoration:none"><span class="grow trunc"><b>${m.name}</b><div class="bar" style="margin-top:6px"><i style="width:${m.progress}%"></i></div></span><span class="sm muted nowrap">${m.dueDate ? fmtDate(m.dueDate) : 'No date'}</span><b class="sm">${m.progress}%</b></a>`)}</div></div>` : ''}
       </div></div>
-    ${!S.tasks.length && !S.pages.length ? h`<div class="card" style="margin-top:22px">${empty('bolt', 'Welcome to Forge', 'Create a task, write a page, or plan your first sprint. Everything you do here is shared live with your team.')}</div>` : ''}
+    ${!S.tasks.length && !S.pages.length ? h`<div class="card" style="margin-top:22px">${empty('bolt', 'Welcome to Forge', canWrite() ? 'Create a task, write a page, or plan your first sprint. Everything you do here is shared live with your team.' : 'Nothing has been added yet. Tasks, sprints and pages will appear here as your team creates them.')}</div>` : ''}
   </div>`;
   return { title: 'Home', body };
 }
