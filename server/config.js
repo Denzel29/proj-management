@@ -13,7 +13,9 @@ module.exports = {
   maxUploadBytes: (Number(env.MAX_UPLOAD_MB) || 25) * 1024 * 1024,
   sessionDays: 30,
   inviteDays: 7,
-  codeMinutes: 10,        // how long an emailed sign-in code works
+  // If set, only this email can complete first-run setup (stops a stranger claiming the admin account).
+  setupEmail: (env.SETUP_EMAIL || '').trim().toLowerCase(),
+  codeMinutes: 10,       // how long an emailed sign-in code works
   codeMaxAttempts: 5,     // wrong guesses before a code is thrown away
   signinLinkMinutes: 60,  // admin-generated fallback sign-in link
   publicDir: path.join(root, 'public'),

@@ -107,11 +107,17 @@ router.post('/auth/logout-others', requireAuth, wrap(async (req, res) => {
 }));
 
 // ---------------------------------------------------------------- first-run setup
+/** When SETUP_EMAIL is configured, nobody else can claim the first admin account. */
+const checkSetupEmail = (addr) => {
+  if (config.setupEmail && addr !== config.setupEmail) throw forbidden('This workspace can only be set up by its owner');
+};
+
 /** The very first admin proves their email with a code too. Only works while there are no users. */
 router.post('/auth/setup/request-code', wrap(async (req, res) => {
   const body = parse(z.object({ email }), req.body);
   rateLimit(`setupcode:${req.ip}`, 10, 3600e3);
   if ((await prisma.user.count()) > 0) throw forbidden('Setup has already been completed');
+  checkSetupEmail(body.email);
   await sendCode(body.email, await issueCode(body.email), 'setup');
   res.json({ ok: true, expiresInMinutes: config.codeMinutes });
 }));
@@ -124,6 +130,7 @@ router.post('/auth/setup', wrap(async (req, res) => {
   }), req.body);
   rateLimit(`setup:${req.ip}`, 20, 3600e3);
   if ((await prisma.user.count()) > 0) throw forbidden('Setup has already been completed');
+  checkSetupEmail(body.email);
   if (!(await verifyCode(body.email, body.code))) throw new H.HttpError(401, BAD_CODE);
 
   const user = await work(async (tx) => {

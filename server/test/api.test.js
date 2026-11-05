@@ -60,6 +60,17 @@ test('API needs sign-in', async () => {
   ok(await anon.get('/bootstrap'), 401);
 });
 
+test('SETUP_EMAIL restricts who can claim the first admin account', async () => {
+  const config = require('../config');
+  config.setupEmail = 'owner@example.com';
+  try {
+    delete codes['stranger@example.com'];
+    ok(await anon.post('/auth/setup/request-code', { email: 'stranger@example.com' }), 403);
+    assert.equal(codes['stranger@example.com'], undefined, 'no code is sent to a stranger');
+    ok(await anon.post('/auth/setup', { name: 'X', email: 'stranger@example.com', code: '123456' }), 403);
+  } finally { config.setupEmail = ''; }
+});
+
 test('first-run setup with an emailed code', async () => {
   ok(await admin.post('/auth/setup/request-code', { email: 'admin@example.com' }));
   assert.match(codes['admin@example.com'], /^\d{6}$/);
