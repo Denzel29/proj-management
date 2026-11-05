@@ -27,6 +27,7 @@ function milestoneStats() {
   for (const m of S.milestones) {
     const o = acc.get(m.id) || { n: 0, d: 0, w: 0, wd: 0 };
     m.taskCount = o.n; m.doneCount = o.d; m.progress = o.w ? Math.round((o.wd / o.w) * 100) : 0;
+    m.status = o.n > 0 && o.d === o.n ? 'completed' : 'open'; // same rule as the server, so it flips instantly
   }
 }
 

@@ -4,6 +4,7 @@ const S = require('./serialize');
 const { audit, diff, extractMentions } = require('./core');
 const { notify } = require('./notify');
 const { removeTargets } = require('./cleanup');
+const { syncMilestones } = require('./milestones');
 const { bad, notFound, conflict } = require('../http');
 
 /** The single project this workspace tracks. */
@@ -173,6 +174,7 @@ async function createTask(tx, after, actor, input) {
 
   const task = await loadTask(tx, created.id);
   await audit(tx, actor.id, 'task.create', 'task', task.id, null, { key: task.key, title: task.title, assigneeId: task.assigneeId, sprintId: task.sprintId });
+  await syncMilestones(tx, after, actor, [task.milestoneId]); // a new open task reopens a finished milestone
   await notify(tx, after, {
     userIds: [data.assigneeId], type: 'assigned', actorId: actor.id, entityType: 'task', entityId: task.id,
     title: `${actor.name} assigned you ${task.key}`, detail: task.title,
@@ -277,6 +279,11 @@ async function updateTask(tx, after, actor, id, patch, version) {
     }
   }
 
+  // finishing or reopening a task, or moving it between milestones, can complete or reopen a milestone
+  if (d.changed.includes('statusId') || d.changed.includes('milestoneId')) {
+    await syncMilestones(tx, after, actor, [before.milestoneId, task.milestoneId]);
+  }
+
   let spawned = null;
   if (becameDone && task.recurrence) {
     spawned = await spawnRecurrence(tx, after, actor, task);
@@ -292,8 +299,10 @@ async function deleteTask(tx, after, actor, id) {
   const t = await loadTask(tx, id);
   if (!t) throw notFound('Task not found');
   const subtree = await subtreeIds(tx, id);
+  const milestoneIds = (await tx.task.findMany({ where: { id: { in: subtree } }, select: { milestoneId: true } })).map((x) => x.milestoneId);
   await removeTargets(tx, after, 'task', subtree); // comments, attachments (and files), favorites...
   await tx.task.delete({ where: { id } }); // child tasks cascade
+  await syncMilestones(tx, after, actor, milestoneIds); // removing the last open task completes a milestone
   await audit(tx, actor.id, 'task.delete', 'task', id, { key: t.key, title: t.title }, null);
   after(() => realtime.broadcast('task.deleted', { ids: subtree }));
 }

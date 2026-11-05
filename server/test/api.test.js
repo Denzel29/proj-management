@@ -698,6 +698,74 @@ test('reminders: due soon and overdue, once each, never for finished tasks', asy
   assert.equal(await runReminders(), 0, 'running again sends nothing new');
 });
 
+// ------------------------------------------------------------------ automatic milestone status
+test('a milestone completes itself when all its tasks are done, and reopens if one is not', async () => {
+  const m = (await admin.post('/milestones', { name: 'Auto milestone', dueDate: '2027-01-01' })).json;
+  const get = async () => (await admin.get('/milestones')).json.find((x) => x.id === m.id);
+  const done = (id) => admin.patch(`/tasks/${id}`, { statusId: ctx.st['Done'] });
+  const doing = (id) => admin.patch(`/tasks/${id}`, { statusId: ctx.st['In Progress'] });
+
+  assert.equal((await get()).status, 'open', 'a milestone with no tasks stays open');
+  const a = (await admin.post('/tasks', { title: 'Auto A', milestoneId: m.id })).json;
+  const b = (await admin.post('/tasks', { title: 'Auto B', milestoneId: m.id, points: 3 })).json;
+
+  await done(a.id);
+  assert.equal((await get()).status, 'open', 'one of two done: still open');
+  await done(b.id);
+  let s = await get();
+  assert.equal(s.status, 'completed', 'all done: completed');
+  assert.equal(s.progress, 100);
+
+  await doing(b.id);                                               // done -> in progress
+  s = await get();
+  assert.equal(s.status, 'open', 'a task moved back reopens it');
+  assert.equal(s.doneCount, 1);
+
+  await done(b.id);
+  assert.equal((await get()).status, 'completed');
+  const c = (await admin.post('/tasks', { title: 'Auto C', milestoneId: m.id })).json;
+  assert.equal((await get()).status, 'open', 'adding an open task reopens it');
+  ok(await admin.del(`/tasks/${c.id}`));
+  assert.equal((await get()).status, 'completed', 'deleting the last open task completes it');
+
+  const d = (await admin.post('/tasks', { title: 'Auto D', milestoneId: m.id })).json;
+  assert.equal((await get()).status, 'open');
+  await admin.patch(`/tasks/${d.id}`, { milestoneId: null });      // unlink the open task
+  assert.equal((await get()).status, 'completed', 'unlinking the open task completes it');
+  const other = (await admin.post('/milestones', { name: 'Other milestone' })).json;
+  await admin.patch(`/tasks/${a.id}`, { milestoneId: other.id });  // moving a done task keeps both consistent
+  assert.equal((await get()).status, 'completed');
+  assert.equal((await admin.get('/milestones')).json.find((x) => x.id === other.id).status, 'completed');
+
+  // a subtask counts like any other task
+  const sub = (await admin.post('/tasks', { title: 'Auto sub', milestoneId: m.id, parentId: b.id })).json;
+  assert.equal((await get()).status, 'open');
+  await done(sub.id);
+  assert.equal((await get()).status, 'completed');
+
+  // status cannot be set by hand: it always follows the tasks
+  await doing(sub.id);
+  const forced = await admin.patch(`/milestones/${m.id}`, { status: 'completed' });
+  ok(forced);
+  assert.equal(forced.json.status, 'open');
+  assert.ok((await admin.get(`/audit?entityType=milestone&entityId=${m.id}`)).json.some((x) => x.action === 'milestone.auto_status'));
+});
+
+test('bulk changes and workflow edits keep milestone status in step', async () => {
+  const m = (await admin.post('/milestones', { name: 'Bulk milestone' })).json;
+  const t1 = (await admin.post('/tasks', { title: 'Bulk 1', milestoneId: m.id })).json;
+  const t2 = (await admin.post('/tasks', { title: 'Bulk 2', milestoneId: m.id })).json;
+  const get = async () => (await admin.get('/milestones')).json.find((x) => x.id === m.id);
+  ok(await admin.post('/tasks/bulk', { ids: [t1.id, t2.id], patch: { statusId: ctx.st['Done'] } }));
+  assert.equal((await get()).status, 'completed', 'bulk-completing finishes the milestone');
+  // a new "doing"-type status: moving the done tasks into it reopens the milestone when it is deleted with a move
+  const s = (await admin.post('/statuses', { name: 'Parked', category: 'doing', color: '#888888' })).json;
+  await admin.post('/tasks/bulk', { ids: [t1.id], patch: { statusId: s.id } });
+  assert.equal((await get()).status, 'open');
+  ok(await admin.del(`/statuses/${s.id}?moveTo=${ctx.st['Done']}`));  // t1 moves to Done
+  assert.equal((await get()).status, 'completed', 'deleting a status and moving its tasks to Done completes it');
+});
+
 // ------------------------------------------------------------------ removing people
 test('removing a member: work stays, access ends, they can be invited again', async () => {
   const lee = new Client();

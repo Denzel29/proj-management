@@ -23,7 +23,7 @@ export function newTaskModal(d = {}) {
     </div>
     <div class="field-row">
       <div class="field"><label>Sprint</label><select class="select" name="sprintId"><option value="">Backlog</option>${options(sprints, d.sprintId, (s) => `${s.name}${s.status === 'active' ? ' (active)' : ''}`)}</select></div>
-      <div class="field"><label>Milestone</label><select class="select" name="milestoneId"><option value="">None</option>${options(S.milestones.filter((m) => m.status === 'open'), d.milestoneId, (m) => m.name)}</select></div>
+      <div class="field"><label>Milestone</label><select class="select" name="milestoneId"><option value="">None</option>${options(S.milestones, d.milestoneId, (m) => (m.status === 'completed' ? `${m.name} (complete, will reopen)` : m.name))}</select></div>
     </div>
     <div class="field-row">
       <div class="field"><label>Story points</label><input name="points" type="number" min="0" step="0.5" class="input" placeholder="e.g. 3"></div>

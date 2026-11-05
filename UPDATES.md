@@ -156,6 +156,15 @@ A running log of what has been built and how. Newest entries at the bottom.
   - **Setup safeguard:** new `SETUP_EMAIL` setting (code in `server/config.js` and `server/routes/auth.js`, covered by a test; 41 tests pass). Only that address can complete first-run setup, so nobody can claim the admin account during the window before you do. On the server it is set to the same address as `SMTP_USER`.
 - **Next:** open https://msforge.denzelchiu.me, create the admin account with the emailed code, then invite the team.
 
+## 12. Milestones complete and reopen automatically (done)
+**What:** A milestone is **complete** when it has tasks and every one of them (subtasks included) is done. If a task moves back out of done, a new open task is added, or an open task is linked, the milestone goes back to **open**.
+**How:**
+- New `server/services/milestones.js` holds the rule (`syncMilestones`) and the progress maths. It runs inside the same database transaction as the task change, so the two can never disagree, and writes a `milestone.auto_status` audit entry and a live `milestone.updated` event when the status flips.
+- It is triggered by: changing a task's status, linking or unlinking a milestone (both the old and new milestone are re-checked), creating a task (including the next copy of a recurring task), deleting a task or its subtasks, bulk edits, deleting a workflow status with its tasks moved, and changing a status's category. The server also re-checks all milestones at start-up, so anything set under the old manual behaviour is corrected.
+- Status is no longer set by hand: the API ignores `status` on milestone edits and the manual **Mark complete / Reopen** menu item is gone.
+- In the browser the status flips instantly using the same rule (`public/js/store.js`), and a new task can still be added to a completed milestone (it shows as "complete, will reopen").
+- **Tests:** 2 new (46 passing): the full lifecycle (partial, complete, move back, add, delete, unlink, subtask, manual attempt ignored, audit entry) and bulk edits and workflow changes. Also checked on the demo workspace: finishing all 7 tasks of a milestone moved it to Completed, moving one back reopened it at 6/7.
+
 ## 11. Flicker fix: screens update in place (done)
 **What:** After editing a task, the slide-over flashed several times.
 **Why:** each save triggered a few quick refreshes (your change, the server reply, a live echo, a history reload) and every refresh rebuilt the whole panel, which replays its slide-in animation.

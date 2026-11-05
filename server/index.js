@@ -56,6 +56,8 @@ app.use(H.errorHandler);
 async function start({ port = config.port, background = true } = {}) {
   if (!config.databaseUrl) throw new Error('DATABASE_URL is not set. Copy .env.example to .env and fill it in.');
   await prisma.$connect();
+  // bring every milestone's status in line with its tasks (covers anything set before this rule existed)
+  await require('./services/core').work((tx, after) => require('./services/milestones').syncAllMilestones(tx, after, null));
   const server = http.createServer(app);
   realtime.attach(server);
   if (background) { mail.startWorker(); require('./services/reminders').start(); }

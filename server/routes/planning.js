@@ -4,6 +4,7 @@ const realtime = require('../realtime');
 const S = require('../services/serialize');
 const { work, audit } = require('../services/core');
 const T = require('../services/tasks');
+const { milestoneStats, withStats, syncMilestones, syncAllMilestones } = require('../services/milestones');
 const H = require('../http');
 
 const { z, uuid, date, wrap, parse, bad, notFound, requireRole } = H;
@@ -162,18 +163,7 @@ router.get('/sprints/:id/burndown', wrap(async (req, res) => {
 }));
 
 // ============================================================ milestones
-/** Progress per milestone from its linked tasks, weighted by points (1 when unestimated). */
-async function milestoneStats(db, ids) {
-  const tasks = await db.task.findMany({ where: { milestoneId: { in: ids } }, select: { milestoneId: true, points: true, status: { select: { category: true } } } });
-  const out = new Map(ids.map((id) => [id, { total: 0, done: 0, weight: 0, weightDone: 0 }]));
-  for (const t of tasks) {
-    const o = out.get(t.milestoneId); const w = t.points || 1;
-    o.total++; o.weight += w;
-    if (t.status.category === 'done') { o.done++; o.weightDone += w; }
-  }
-  return out;
-}
-const withStats = (m, st) => ({ ...S.milestone(m), taskCount: st.total, doneCount: st.done, progress: st.weight ? Math.round((st.weightDone / st.weight) * 100) : 0 });
+// A milestone's status is automatic: complete when it has tasks and all are done (see services/milestones.js).
 
 router.get('/milestones', wrap(async (req, res) => {
   const rows = await prisma.milestone.findMany({ orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }] });
@@ -187,7 +177,7 @@ router.post('/milestones', member, wrap(async (req, res) => {
   const body = parse(z.object(msFields).partial({ description: true, dueDate: true, status: true }), req.body);
   const m = await work(async (tx, after) => {
     const project = await T.getProject(tx);
-    const row = await tx.milestone.create({ data: { projectId: project.id, name: body.name, description: body.description ?? '', dueDate: S.day(body.dueDate), status: body.status ?? 'open' } });
+    const row = await tx.milestone.create({ data: { projectId: project.id, name: body.name, description: body.description ?? '', dueDate: S.day(body.dueDate), status: 'open' } });
     await audit(tx, req.user.id, 'milestone.create', 'milestone', row.id, null, { name: row.name, dueDate: body.dueDate ?? null });
     const out = withStats(row, { total: 0, done: 0, weight: 0, weightDone: 0 });
     after(() => realtime.broadcast('milestone.created', { milestone: out }));
@@ -203,10 +193,13 @@ router.patch('/milestones/:id', member, wrap(async (req, res) => {
     if (!cur) throw notFound('Milestone not found');
     const row = await tx.milestone.update({
       where: { id: cur.id },
-      data: { name: body.name, description: body.description, status: body.status, dueDate: 'dueDate' in body ? S.day(body.dueDate) : undefined },
+      // status is deliberately not editable: it follows the milestone's tasks
+      data: { name: body.name, description: body.description, dueDate: 'dueDate' in body ? S.day(body.dueDate) : undefined },
     });
     await audit(tx, req.user.id, 'milestone.update', 'milestone', row.id, S.milestone(cur), S.milestone(row));
-    const out = withStats(row, (await milestoneStats(tx, [row.id])).get(row.id));
+    await syncMilestones(tx, after, req.user, [row.id]); // also repairs a milestone whose status had drifted
+    const fresh = await tx.milestone.findUnique({ where: { id: row.id } });
+    const out = withStats(fresh, (await milestoneStats(tx, [row.id])).get(row.id));
     after(() => realtime.broadcast('milestone.updated', { milestone: out }));
     return out;
   });
@@ -273,7 +266,7 @@ router.post('/statuses', admin, wrap(async (req, res) => {
 
 router.patch('/statuses/:id', admin, wrap(async (req, res) => {
   const body = parse(statusShape.partial(), req.body);
-  const out = await work(async (tx) => {
+  const out = await work(async (tx, after) => {
     const cur = await tx.status.findUnique({ where: { id: req.params.id } });
     if (!cur) throw notFound('Status not found');
     if (body.category && body.category !== cur.category) {
@@ -282,6 +275,7 @@ router.patch('/statuses/:id', admin, wrap(async (req, res) => {
     }
     const s = await tx.status.update({ where: { id: cur.id }, data: body });
     await audit(tx, req.user.id, 'status.update', 'status', s.id, { name: cur.name, category: cur.category }, { name: s.name, category: s.category });
+    if (s.category !== cur.category) await syncAllMilestones(tx, after, req.user); // what counts as "done" changed
     return s;
   });
   await broadcastStatuses(prisma);
@@ -313,6 +307,7 @@ router.delete('/statuses/:id', admin, wrap(async (req, res) => {
     }
     await tx.status.delete({ where: { id: cur.id } });
     await audit(tx, req.user.id, 'status.delete', 'status', cur.id, { name: cur.name }, null);
+    await syncAllMilestones(tx, after, req.user); // moved tasks may have become done (or not)
     after(() => realtime.broadcast('tasks.refresh'));
   });
   await broadcastStatuses(prisma);

@@ -98,7 +98,6 @@ const msExpanded = new Set();
 A['ms-new'] = () => milestoneModal();
 A['ms-edit'] = (el) => milestoneModal(milestone(el.dataset.id));
 A['ms-toggle-tasks'] = (el) => { const id = el.dataset.id; msExpanded.has(id) ? msExpanded.delete(id) : msExpanded.add(id); changed(); };
-A['ms-complete'] = async (el) => { const m = milestone(el.dataset.id); upsertLocal('milestones', await patch(`/milestones/${m.id}`, { status: m.status === 'completed' ? 'open' : 'completed' })); };
 A['ms-del'] = async (el) => {
   const m = milestone(el.dataset.id);
   if (!(await confirmDialog(`Delete the milestone "${m.name}"? Its tasks stay, just unlinked.`))) return;
@@ -119,7 +118,7 @@ function msCard(m) {
     <div class="row" style="align-items:flex-start;gap:14px">
       <div class="big-ring"><svg width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="${R}" fill="none" stroke="var(--border)" stroke-width="6"/><circle cx="32" cy="32" r="${R}" fill="none" stroke="${m.status === 'completed' ? 'var(--ok)' : 'var(--teal)'}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${Cc}" stroke-dashoffset="${Cc * (1 - m.progress / 100)}" transform="rotate(-90 32 32)"/></svg><b>${m.progress}%</b></div>
       <div class="grow"><div class="row"><h3 class="trunc">${m.name}</h3>${m.status === 'completed' ? h`<span class="state completed">complete</span>` : over ? h`<span class="pill prio-high">Overdue</span>` : ''}</div>
-        <div class="muted sm">${m.dueDate ? `Due ${fmtDateY(m.dueDate)}${m.status === 'open' && left != null ? ` · ${left < 0 ? `${-left}d overdue` : left === 0 ? 'today' : `in ${left}d`}` : ''}` : 'No due date'} · ${m.doneCount}/${m.taskCount} tasks done</div>
+        <div class="muted sm">${m.dueDate ? `Due ${fmtDateY(m.dueDate)}${m.status === 'open' && left != null ? ` · ${left < 0 ? `${-left}d overdue` : left === 0 ? 'today' : `in ${left}d`}` : ''}` : 'No due date'} · ${m.doneCount}/${m.taskCount} tasks done${m.status === 'completed' ? ' · completed automatically' : ''}</div>
         ${m.description ? h`<div class="sm" style="margin-top:6px">${m.description}</div>` : ''}</div>
       ${canWrite() ? h`<button class="icon-btn" data-act="ms-menu" data-id="${m.id}" aria-label="Options">${icon('more', 16)}</button>` : ''}</div>
     <div class="bar"><i style="width:${m.progress}%"></i></div>
@@ -135,7 +134,6 @@ A['ms-menu'] = (el) => {
   const m = milestone(el.dataset.id);
   openMenu(el, [
     { label: 'Edit', icon: 'edit', onClick: () => milestoneModal(m) },
-    { label: m.status === 'completed' ? 'Reopen' : 'Mark complete', icon: 'check', onClick: () => A['ms-complete']({ dataset: { id: m.id } }) },
     'sep', { label: 'Delete', icon: 'trash', danger: true, onClick: () => A['ms-del']({ dataset: { id: m.id } }) },
   ]);
 };
@@ -146,7 +144,7 @@ export function milestones() {
     ${open.length ? h`<div class="grid g2">${open.map(msCard)}</div>` : ''}
     ${done.length ? h`<div class="sec-title" style="margin:24px 0 10px">Completed</div><div class="grid g2">${done.map(msCard)}</div>` : ''}`
       : h`<div class="card">${empty('flag', 'No milestones yet', 'Milestones mark big goals. Link tasks to them and progress builds up automatically.', canWrite() ? h`<button class="btn primary" data-act="ms-new">New milestone</button>` : '')}</div>`}</div>`;
-  return { title: 'Milestones', subtitle: 'Tasks build up to your goals', actions: canWrite() ? h`<button class="btn primary" data-act="ms-new">${icon('plus', 16)} New milestone</button>` : '', body };
+  return { title: 'Milestones', subtitle: 'Complete automatically when all their tasks are done', actions: canWrite() ? h`<button class="btn primary" data-act="ms-new">${icon('plus', 16)} New milestone</button>` : '', body };
 }
 
 void task; void sprint; void raw;
