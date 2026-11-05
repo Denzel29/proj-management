@@ -155,3 +155,15 @@ A running log of what has been built and how. Newest entries at the bottom.
   - **Email:** SMTP settings are in the server `.env`; a login test from inside the container succeeded (authentication only, no mail sent). The first code email arrived but showed the Gmail login account as sender: Gmail ignores `MAIL_FROM` unless that address is a verified "Send mail as" alias. The `MSForge <msforge@denzelchiu.me>` alias already existed in Gmail, so `MAIL_FROM` was set to it and the next email showed the right sender (confirmed). First-run setup was allowed for the CMU address by setting `SETUP_EMAIL` to it.
   - **Setup safeguard:** new `SETUP_EMAIL` setting (code in `server/config.js` and `server/routes/auth.js`, covered by a test; 41 tests pass). Only that address can complete first-run setup, so nobody can claim the admin account during the window before you do. On the server it is set to the same address as `SMTP_USER`.
 - **Next:** open https://msforge.denzelchiu.me, create the admin account with the emailed code, then invite the team.
+
+## 10. Add and remove people from the Team page (done)
+**What:** Admins can add members and remove them from the project for good, both from **Team**.
+**How:**
+- **Add:** a new **Add member** button (top right of Team) opens a dialog for email and role, and sends the same emailed invite as the box on the page. Re-inviting someone who was deactivated now says to reactivate them instead of the old confusing "already has an account".
+- **Remove:** each member's menu has **Remove from project...** (admins only, never yourself) beside the reversible **Deactivate**. The confirmation says how many assigned tasks will become unassigned. On removal (`DELETE /api/users/:id`, one database transaction):
+  - their account is deleted, they are signed out at once and their live connection is closed;
+  - their tasks become unassigned, they stop watching tasks, and their notifications, favorites, recent items, saved filters and pending emails are deleted;
+  - their comments, files, time entries and audit history stay, shown as "Former member";
+  - the last active admin can never be removed, and the same address can be invited again afterwards.
+- **Live:** everyone else's Team list and task assignees update immediately (`user.removed` event). Deactivating someone now also closes their open connections.
+- **Tests:** 3 new tests (44 passing): permissions and self-removal, work kept and access revoked and re-invite, the admin safeguards and messages. Checked in the browser on the demo workspace, including the confirmation text and the live update.

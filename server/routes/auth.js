@@ -221,7 +221,8 @@ router.get('/invites', requireAuth, requireRole('admin'), wrap(async (req, res) 
 router.post('/invites', requireAuth, requireRole('admin'), wrap(async (req, res) => {
   const body = parse(z.object({ email, role: z.enum(['admin', 'member', 'viewer']).default('member') }), req.body);
   const out = await work(async (tx) => {
-    if (await tx.user.findUnique({ where: { email: body.email } })) throw bad('That person already has an account');
+    const existing = await tx.user.findUnique({ where: { email: body.email } });
+    if (existing) throw bad(existing.active ? 'That person is already a member' : 'That person was deactivated. Reactivate them from the Deactivated list on this page.');
     await tx.invite.updateMany({ where: { email: body.email, acceptedAt: null, revokedAt: null }, data: { revokedAt: new Date() } });
     const token = sessions.newToken();
     const inv = await tx.invite.create({
@@ -297,10 +298,46 @@ router.patch('/users/:id', requireAuth, requireRole('admin'), wrap(async (req, r
     const u = await tx.user.update({ where: { id: cur.id }, data: next });
     if (!next.active) await tx.session.deleteMany({ where: { userId: cur.id } });
     await audit(tx, req.user.id, 'user.update', 'user', cur.id, { role: cur.role, active: cur.active }, next);
-    after(() => realtime.broadcast('user.updated', { user: S.user(u) }));
+    after(() => { realtime.broadcast('user.updated', { user: S.user(u) }); if (!next.active) realtime.dropUser(cur.id); });
     return u;
   });
   res.json(S.user(user));
+}));
+
+/**
+ * Admin: remove someone from the project for good. Their account is deleted so the address can be
+ * invited again later. Their work stays: tasks become unassigned, comments and files stay but show
+ * "Former member". Use PATCH {active:false} instead for a reversible lock-out.
+ */
+router.delete('/users/:id', requireAuth, requireRole('admin'), wrap(async (req, res) => {
+  if (req.params.id === req.user.id) throw bad('You cannot remove yourself. Ask another admin, or deactivate your account instead.');
+  const out = await work(async (tx, after) => {
+    const u = await tx.user.findUnique({ where: { id: req.params.id } });
+    if (!u) throw notFound('User not found');
+    if (u.role === 'admin' && u.active) {
+      const others = await tx.user.count({ where: { role: 'admin', active: true, id: { not: u.id } } });
+      if (!others) throw bad('There must be at least one active admin');
+    }
+    const mine = await tx.task.count({ where: { assigneeId: u.id } });
+    await tx.task.updateMany({ where: { assigneeId: u.id }, data: { assigneeId: null, version: { increment: 1 }, updatedAt: new Date() } });
+    await tx.task.updateMany({ where: { reporterId: u.id }, data: { reporterId: null } });
+    await tx.taskWatcher.deleteMany({ where: { userId: u.id } });
+    await tx.comment.updateMany({ where: { authorId: u.id }, data: { authorId: null } });
+    await tx.attachment.updateMany({ where: { uploaderId: u.id }, data: { uploaderId: null } });
+    await tx.notification.deleteMany({ where: { userId: u.id } });
+    await tx.notification.updateMany({ where: { actorId: u.id }, data: { actorId: null } });
+    await tx.favorite.deleteMany({ where: { userId: u.id } });
+    await tx.recentVisit.deleteMany({ where: { userId: u.id } });
+    await tx.savedFilter.deleteMany({ where: { userId: u.id } });
+    await tx.emailQueue.deleteMany({ where: { userId: u.id, status: 'pending' } });
+    await tx.loginToken.deleteMany({ where: { email: u.email } });
+    await tx.invite.updateMany({ where: { email: u.email, acceptedAt: null, revokedAt: null }, data: { revokedAt: new Date() } });
+    await tx.user.delete({ where: { id: u.id } }); // their sessions are deleted with them
+    await audit(tx, req.user.id, 'user.remove', 'user', u.id, { name: u.name, email: u.email, role: u.role }, { tasksUnassigned: mine });
+    after(() => { realtime.dropUser(u.id); realtime.broadcast('user.removed', { id: u.id }); realtime.broadcast('tasks.refresh'); });
+    return { tasksUnassigned: mine };
+  });
+  res.json({ ok: true, ...out });
 }));
 
 /** Admin: sign someone out of every device. */

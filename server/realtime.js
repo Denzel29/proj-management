@@ -53,9 +53,15 @@ function toUser(userId, type, data = {}) {
   for (const c of clients) if (c.userId === userId) send(c, payload);
 }
 
+/** Close every open connection of a user (used when they are removed or deactivated). */
+function dropUser(userId) {
+  for (const c of [...clients]) if (c.userId === userId) { try { c.ws.close(4001, 'removed'); } catch { /* ignore */ } clients.delete(c); }
+  broadcastPresence();
+}
+
 function broadcastPresence() {
   const online = [...new Set([...clients].map((c) => c.userId))];
   broadcast('presence', { online });
 }
 
-module.exports = { attach, broadcast, toUser };
+module.exports = { attach, broadcast, toUser, dropUser };

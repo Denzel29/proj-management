@@ -1,6 +1,6 @@
 // Team: members, roles, presence, and (for admins) invites and account controls.
 import { get, post, patch, del } from '../api.js';
-import { S, isAdmin, isDone, changed, upsertLocal } from '../store.js';
+import { S, isAdmin, isDone, changed, upsertLocal, removeLocal, refreshTasks } from '../store.js';
 import { h, raw, icon, avatar, openModal, toast, openMenu, confirmDialog, copyText, timeAgo, fmtDateY, empty } from '../ui.js';
 import { A, K } from '../actions.js';
 
@@ -33,6 +33,32 @@ A['invite-send'] = async () => {
 A['invite-resend'] = async (el) => { const r = await post(`/invites/${el.dataset.id}/resend`); await loadInvites(); linkModal('Invite re-sent', 'A fresh link was emailed. The previous link no longer works.', r.link); };
 A['invite-revoke'] = async (el) => { if (await confirmDialog('Revoke this invite?', { okLabel: 'Revoke' })) { await del(`/invites/${el.dataset.id}`); await loadInvites(); } };
 
+// ---- add a member (same invite as the box on the page, in a dialog)
+A['member-add'] = () => openModal({
+  title: 'Add a member', submit: 'Send invite',
+  body: h`<p class="muted" style="margin-top:0">They get an email with a link. They confirm their address with a code and choose a name.</p>
+    <div class="field"><label>Email address</label><input class="input" type="email" name="email" required placeholder="name@example.com"></div>
+    <div class="field"><label>Role</label><select class="select" name="role">${Object.entries(ROLES).map(([r, d]) => h`<option value="${r}" ${r === 'member' ? raw('selected') : ''}>${r[0].toUpperCase() + r.slice(1)}: ${d}</option>`)}</select></div>`,
+  onSubmit: async (v) => {
+    const r = await post('/invites', { email: v.email.trim(), role: v.role });
+    await loadInvites();
+    linkModal('Invite sent', 'We emailed the invite. You can also share this link with them directly (it works once and expires in 7 days).', r.link);
+    return false; // the link dialog replaces this one, so do not close it
+  },
+});
+
+// ---- remove a member for good
+async function removeMember(u) {
+  const n = S.tasks.filter((t) => t.assigneeId === u.id).length;
+  const ok = await confirmDialog(
+    `Remove ${u.name} from the project? They are signed out and lose access straight away. ${n ? `Their ${n} assigned task${n === 1 ? '' : 's'} become unassigned. ` : ''}Their comments, files and history stay, shown as "Former member". You can invite them again later.`,
+    { okLabel: 'Remove from project', title: `Remove ${u.name}?` });
+  if (!ok) return;
+  const r = await del(`/users/${u.id}`);
+  removeLocal('users', u.id); await refreshTasks();
+  toast(`${u.name} was removed${r.tasksUnassigned ? ` and ${r.tasksUnassigned} task${r.tasksUnassigned === 1 ? ' is' : 's are'} now unassigned` : ''}`);
+}
+
 async function setRole(u, role) { upsertLocal; const out = await patch(`/users/${u.id}`, { role }); toast(`${u.name} is now ${out.role}`); }
 A['member-menu'] = (el) => {
   const u = S.users.find((x) => x.id === el.dataset.id);
@@ -42,7 +68,8 @@ A['member-menu'] = (el) => {
     { label: 'Create sign-in link', icon: 'link', onClick: async () => { const r = await post(`/users/${u.id}/signin-link`); linkModal(`Sign-in link for ${u.name}`, `Share this one-time link with ${u.name}. It signs them in once and expires in ${r.expiresInMinutes} minutes. Use it if email is not reaching them.`, r.link); } },
     { label: 'Sign out of all devices', icon: 'logout', onClick: async () => { const r = await del(`/users/${u.id}/sessions`); toast(`Ended ${r.ended} session${r.ended === 1 ? '' : 's'}`); } },
     'sep',
-    u.active ? { label: 'Deactivate account', icon: 'x', danger: true, onClick: async () => { if (await confirmDialog(`Deactivate ${u.name}? They are signed out and cannot sign in. Their tasks and comments stay.`, { okLabel: 'Deactivate' })) await patch(`/users/${u.id}`, { active: false }).catch((e) => toast(e.message, 'error')); } }
+    { label: 'Remove from project...', icon: 'trash', danger: true, onClick: () => removeMember(u).catch((e) => toast(e.message, 'error')) },
+    u.active ? { label: 'Deactivate (can be undone)', icon: 'x', danger: true, onClick: async () => { if (await confirmDialog(`Deactivate ${u.name}? They are signed out and cannot sign in. Their tasks and comments stay.`, { okLabel: 'Deactivate' })) await patch(`/users/${u.id}`, { active: false }).catch((e) => toast(e.message, 'error')); } }
       : { label: 'Reactivate account', icon: 'check', onClick: () => patch(`/users/${u.id}`, { active: true }) },
   ]);
 };
@@ -70,6 +97,9 @@ export default function team() {
     <div class="sec-title">Members <span class="count-badge">${active.length}</span></div>
     <div class="grid g2">${active.map(card)}</div>
     ${inactive.length && isAdmin() ? h`<div class="sec-title" style="margin-top:24px">Deactivated</div><div class="grid g2">${inactive.map(card)}</div>` : ''}</div>`;
-  return { title: 'Team', subtitle: `${active.length} member${active.length === 1 ? '' : 's'}`, body };
+  return {
+    title: 'Team', subtitle: `${active.length} member${active.length === 1 ? '' : 's'}`, body,
+    actions: isAdmin() ? h`<button class="btn primary" data-act="member-add">${icon('plus', 16)} Add member</button>` : '',
+  };
 }
 void empty;

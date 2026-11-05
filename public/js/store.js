@@ -174,6 +174,7 @@ function applyEvent(ev) {
     case 'statuses.updated': S.statuses = ev.statuses; reindex(); changed(); break;
     case 'template.upserted': upsert(S.templates, ev.template); changed(); break;
     case 'template.deleted': S.templates = S.templates.filter((t) => t.id !== ev.id); changed(); break;
+    case 'user.removed': S.users = S.users.filter((u) => u.id !== ev.id); reindex(); changed(); break;
     case 'project.updated': S.project = { ...S.project, ...ev.project }; changed(); break;
     case 'user.joined': case 'user.updated': upsert(S.users, ev.user); if (ev.user.id === S.me.id) S.me = ev.user; reindex(); changed(); break;
     case 'page.created': case 'page.updated': upsert(S.pages, { id: ev.page.id, title: ev.page.title, icon: ev.page.icon, parentId: ev.page.parentId, position: ev.page.position, updatedAt: ev.page.updatedAt }); reindex(); changed(); break;

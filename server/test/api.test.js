@@ -697,3 +697,55 @@ test('reminders: due soon and overdue, once each, never for finished tasks', asy
   assert.ok(!reminders.some((n) => n.entityId === far.id), 'far-off tasks are not nagged');
   assert.equal(await runReminders(), 0, 'running again sends nothing new');
 });
+
+// ------------------------------------------------------------------ removing people
+test('removing a member: work stays, access ends, they can be invited again', async () => {
+  const lee = new Client();
+  const { user } = await join(lee, 'leaver@example.com', 'member', 'Lee Leaver');
+  const t = (await admin.post('/tasks', { title: 'Lee task', assigneeId: user.id })).json;
+  const c = (await lee.post('/comments', { targetType: 'task', targetId: t.id, body: 'from Lee' })).json;
+  await lee.call('PUT', '/favorites', { entityType: 'task', entityId: t.id });
+
+  ok(await member.del(`/users/${user.id}`), 403);              // only admins
+  ok(await admin.del(`/users/${ctx.adminId}`), 400);           // never yourself
+  ok(await admin.del('/users/00000000-0000-4000-8000-000000000000'), 404);
+
+  const r = await admin.del(`/users/${user.id}`);
+  ok(r);
+  assert.equal(r.json.tasksUnassigned, 1);
+
+  // their work stays, anonymised
+  assert.equal((await admin.get(`/tasks/${t.id}`)).json.task.assigneeId, null);
+  const kept = (await admin.get(`/comments?targetType=task&targetId=${t.id}`)).json.find((x) => x.id === c.id);
+  assert.ok(kept, 'comment is kept');
+  assert.equal(kept.authorId, null);
+  // access is gone and their personal data is cleaned up
+  ok(await lee.get('/bootstrap'), 401);
+  assert.equal(await prisma.user.count({ where: { email: 'leaver@example.com' } }), 0);
+  assert.equal(await prisma.favorite.count({ where: { userId: user.id } }), 0);
+  assert.equal(await prisma.session.count({ where: { userId: user.id } }), 0);
+  ok(await admin.del(`/users/${user.id}`), 404);
+  assert.ok((await admin.get('/audit?action=user.remove')).json.some((a) => a.entityId === user.id));
+
+  // the same address can be invited again
+  await join(new Client(), 'leaver@example.com', 'viewer', 'Lee Returns');
+});
+
+test('inviting a deactivated person explains how to bring them back', async () => {
+  const r = await admin.post('/invites', { email: 'viewer@example.com', role: 'member' }); // deactivated in an earlier test
+  ok(r, 400);
+  assert.match(r.json.error, /deactivated/i);
+  const act = await admin.post('/invites', { email: 'member@example.com', role: 'member' });
+  ok(act, 400);
+  assert.match(act.json.error, /already a member/i);
+});
+
+test('removing an admin is refused when it would leave no admin', async () => {
+  const second = new Client();
+  const { user } = await join(second, 'second-admin@example.com', 'admin', 'Second Admin');
+  ok(await admin.patch(`/users/${ctx.adminId}`, { role: 'member' }));      // the original admin steps down
+  ok(await second.del(`/users/${ctx.adminId}`));                           // the new admin may remove them
+  ok(await second.del(`/users/${user.id}`), 400);                          // but cannot remove themselves
+  // restore an admin so later tests are unaffected
+  await prisma.user.create({ data: { email: 'restored-admin@example.com', name: 'Restored', role: 'admin' } });
+});
