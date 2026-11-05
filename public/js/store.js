@@ -8,9 +8,32 @@ export const S = {
   connected: false,
 };
 
+// ---------------------------------------------------------------- milestone progress
+/**
+ * Milestone counts and percentage come from the tasks, so they are always worked out here from the
+ * live task list (points-weighted, 1 for unestimated tasks) rather than trusted from the server,
+ * which only knows them at the moment a milestone is loaded.
+ */
+function milestoneStats() {
+  const acc = new Map();
+  for (const t of S.tasks) {
+    if (!t.milestoneId) continue;
+    const o = acc.get(t.milestoneId) || { n: 0, d: 0, w: 0, wd: 0 };
+    const w = t.points || 1;
+    o.n++; o.w += w;
+    if (t.statusCategory === 'done') { o.d++; o.wd += w; }
+    acc.set(t.milestoneId, o);
+  }
+  for (const m of S.milestones) {
+    const o = acc.get(m.id) || { n: 0, d: 0, w: 0, wd: 0 };
+    m.taskCount = o.n; m.doneCount = o.d; m.progress = o.w ? Math.round((o.wd / o.w) * 100) : 0;
+  }
+}
+
 // ---------------------------------------------------------------- indexes
 let idx = {};
 function reindex() {
+  milestoneStats();
   const m = (arr) => new Map(arr.map((x) => [x.id, x]));
   const children = new Map();
   for (const t of S.tasks) if (t.parentId) { if (!children.has(t.parentId)) children.set(t.parentId, []); children.get(t.parentId).push(t); }
@@ -91,6 +114,7 @@ export function saveTask(id, patchData) {
   if (!local) return Promise.resolve(null);
   Object.assign(local, patchData); // optimistic
   if ('statusId' in patchData) { const st = status(patchData.statusId); if (st) local.statusCategory = st.category; }
+  milestoneStats(); // progress rings react at once, before the server answers
   changed();
   const run = async () => {
     const cur = task(id);
