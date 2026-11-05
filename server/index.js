@@ -43,7 +43,9 @@ app.use('/api', api);
 
 // ---------------- frontend ----------------
 if (fs.existsSync(config.publicDir)) {
-  app.use(express.static(config.publicDir, { index: 'index.html', maxAge: config.isProd ? '1h' : 0 }));
+  // No build step means no hashed file names, so browsers must re-check on every load (cheap 304s)
+  // or people would see the old app for up to an hour after an update.
+  app.use(express.static(config.publicDir, { index: 'index.html', maxAge: 0, etag: true, lastModified: true }));
   app.get('*', (req, res) => res.sendFile(path.join(config.publicDir, 'index.html')));
 }
 
