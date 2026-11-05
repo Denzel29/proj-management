@@ -1,0 +1,15 @@
+# Add this block to ~/apptracker/Deploy/Caddyfile, then reload Caddy:
+#   docker exec deploy-caddy-1 caddy validate --config /etc/caddy/Caddyfile
+#   docker exec deploy-caddy-1 caddy reload   --config /etc/caddy/Caddyfile
+# DNS for projects.denzelchiu.me must already point at this server so Caddy can get a certificate.
+projects.denzelchiu.me {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# WebSockets (live updates) pass through reverse_proxy automatically
+	reverse_proxy forge-app:3000
+}

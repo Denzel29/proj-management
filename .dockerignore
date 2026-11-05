@@ -1,0 +1,11 @@
+node_modules
+.git
+.env
+.env.*
+uploads
+*.log
+server/test
+deploy
+README.md
+PLAN.md
+UPDATES.md
