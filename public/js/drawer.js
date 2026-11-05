@@ -182,7 +182,8 @@ export function drawer(taskId) {
   if (D.taskId !== taskId) { drawerClosed(); D.taskId = taskId; D.tab = 'comments'; loadDetail(taskId); visit('task', taskId); }
   const t = task(taskId);
   const shell = (inner, tt) => ({
-    html: h`<div class="drawer-backdrop" data-act="drawer-close"></div><aside class="drawer" role="dialog" aria-label="Task details">${inner}</aside>`,
+    // "enter" stays on the elements: the slide-in runs once when they are created, and refreshes update them in place
+    html: h`<div class="drawer-backdrop enter" data-act="drawer-close"></div><aside class="drawer enter" role="dialog" aria-label="Task details">${inner}</aside>`,
     after: (root) => { const f = root.querySelector('[data-autofocus]'); if (f && document.activeElement !== f) f.focus(); void tt; },
   });
   if (!t) {

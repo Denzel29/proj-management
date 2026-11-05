@@ -4,6 +4,7 @@ import { S, loadAll, connect, disconnect, subscribe, setHooks, changed, canWrite
 import { A, C, I, K, go } from './actions.js';
 import { h, raw, icon, $, $$, avatar, openMenu, closeMenu, closeMentions, handleMentionInput, toast, openModal, closeModal } from './ui.js';
 import { initDnd } from './dnd.js';
+import { morph } from './morph.js';
 import { newTaskModal, quickPage, pageTemplateModal, sprintModal, milestoneModal } from './forms.js';
 import { openSearch } from './search.js';
 import * as auth from './auth.js';
@@ -118,6 +119,7 @@ function topHtml(view) {
 
 // ---------------------------------------------------------------- rendering
 let renderSeq = 0;
+let lastRouteHash = null;
 /** Remember typed text/focus in fields marked data-fid so a live update never wipes what you are typing. */
 function snapshotFields(scope) {
   const out = {};
@@ -148,9 +150,11 @@ export async function render() {
   const scrollY = window.scrollY, snap = snapshotFields(document.body);
   const boardScroll = $('.board')?.scrollLeft || 0;
 
-  $('#side').innerHTML = String(sideHtml(route));
-  $('#top').innerHTML = String(topHtml(view));
-  content.innerHTML = String(view.body);
+  // Same screen: update in place (no flicker). A different screen starts from a clean slate.
+  morph($('#side'), String(sideHtml(route)));
+  morph($('#top'), String(topHtml(view)));
+  if (route.hash === lastRouteHash) morph(content, String(view.body)); else content.innerHTML = String(view.body);
+  lastRouteHash = route.hash;
   document.title = `${view.title} | ${S.project.name}`;
 
   const nb = $('.board'); if (nb) nb.scrollLeft = boardScroll;
@@ -161,16 +165,19 @@ export async function render() {
   void main;
 }
 
+let lastDrawerTask = null;
 async function renderDrawer() {
   const root = $('#drawer-root');
-  if (!ui.taskId) { if (root.innerHTML) { root.innerHTML = ''; (await import('./drawer.js')).drawerClosed(); } return; }
+  if (!ui.taskId) { lastDrawerTask = null; if (root.innerHTML) { root.innerHTML = ''; (await import('./drawer.js')).drawerClosed(); } return; }
   const d = await import('./drawer.js');
-  const prevScroll = $('.drawer-body')?.scrollTop || 0;
-  const wasOpen = !!root.querySelector('.drawer');
   const out = d.drawer(ui.taskId);
-  root.innerHTML = String(out.html);
-  if (wasOpen) root.querySelectorAll('.drawer, .drawer-backdrop').forEach((el) => el.classList.add('still'));
-  const body = $('.drawer-body'); if (body) body.scrollTop = prevScroll;
+  const wasOpen = !!root.firstElementChild;
+  if (!wasOpen) root.innerHTML = String(out.html); // first open: build it, it slides in once
+  else {
+    morph(root, String(out.html)); // refresh in place: only what differs changes, so nothing blinks
+    if (lastDrawerTask !== ui.taskId) { const b = $('.drawer-body'); if (b) b.scrollTop = 0; } // jumped to another task: start at its top
+  }
+  lastDrawerTask = ui.taskId;
   out.after?.(root);
 }
 

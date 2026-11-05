@@ -156,6 +156,15 @@ A running log of what has been built and how. Newest entries at the bottom.
   - **Setup safeguard:** new `SETUP_EMAIL` setting (code in `server/config.js` and `server/routes/auth.js`, covered by a test; 41 tests pass). Only that address can complete first-run setup, so nobody can claim the admin account during the window before you do. On the server it is set to the same address as `SMTP_USER`.
 - **Next:** open https://msforge.denzelchiu.me, create the admin account with the emailed code, then invite the team.
 
+## 11. Flicker fix: screens update in place (done)
+**What:** After editing a task, the slide-over flashed several times.
+**Why:** each save triggered a few quick refreshes (your change, the server reply, a live echo, a history reload) and every refresh rebuilt the whole panel, which replays its slide-in animation.
+**How:**
+- New `public/js/morph.js`: instead of replacing the HTML, it compares the new markup with what is on screen and changes only what differs. Elements stay in place, so nothing blinks, animations do not restart, images do not reload, and scroll position, focus and half-typed text are kept (fields being typed in are never overwritten). Used for the sidebar, top bar, page content and the slide-over. Switching to a different screen still starts from a clean slate.
+- The slide-in animation lives on the elements (`.enter`) and so runs only when the panel is created.
+- Refreshes are skipped when nothing is new: the live echo of your own save, repeated history/comment/file reloads (also coalesced into one), and saving page text (only the edited-time changes).
+- **Measured on the demo workspace:** after editing a field, 0 nodes were removed or added, the panel and its scroll position stayed the same, a half-written comment kept its text and focus through a live update from someone else, drag and drop, filters and the page editor still work, and every screen renders without errors.
+
 ## 10. Add and remove people from the Team page (done)
 **What:** Admins can add members and remove them from the project for good, both from **Team**.
 **How:**
