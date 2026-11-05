@@ -137,6 +137,10 @@ test('invites: member and viewer join with an emailed code', async () => {
   const m = await join(member, 'member@example.com', 'member', 'Mia');
   const v = await join(viewer, 'viewer@example.com', 'viewer', 'Vic');
   ctx.memberId = m.user.id; ctx.viewerId = v.user.id;
+  // new accounts are sent to notification settings first and start with quieter email
+  assert.equal(m.user.prefs.onboarded, false);
+  assert.deepEqual(m.user.prefs.notify.watched_update, { inapp: true, email: false });
+  assert.equal(admin.cookie !== '' && (await admin.get('/bootstrap')).json.me.prefs.onboarded, false, 'the first admin is a new account too');
   // the invite cannot be reused
   ok(await anon.get(`/invites/lookup/${m.token}`), 404);
 });
@@ -764,6 +768,24 @@ test('bulk changes and workflow edits keep milestone status in step', async () =
   assert.equal((await get()).status, 'open');
   ok(await admin.del(`/statuses/${s.id}?moveTo=${ctx.st['Done']}`));  // t1 moves to Done
   assert.equal((await get()).status, 'completed', 'deleting a status and moving its tasks to Done completes it');
+});
+
+// ------------------------------------------------------------------ new-member notification defaults
+test('a new member can finish onboarding, and watched-task emails stay off for them', async () => {
+  // finishing keeps the other preferences and only flips the flag
+  const me = (await member.get('/bootstrap')).json.me;
+  const done = await member.patch('/me', { prefs: { ...me.prefs, onboarded: true } });
+  ok(done);
+  assert.equal(done.json.prefs.onboarded, true);
+  assert.deepEqual(done.json.prefs.notify.watched_update, { inapp: true, email: false });
+  // a watched-task change reaches their Inbox but is not queued as an email for them
+  const t = (await admin.post('/tasks', { title: 'Quiet watcher test', assigneeId: ctx.adminId })).json;
+  await admin.post(`/tasks/${t.id}/watchers`, { userId: ctx.memberId });
+  await prisma.emailQueue.deleteMany({ where: { toEmail: 'member@example.com' } });
+  await admin.patch(`/tasks/${t.id}`, { priority: 'critical' });
+  assert.equal(await prisma.emailQueue.count({ where: { toEmail: 'member@example.com' } }), 0, 'no email for a watched-task change');
+  assert.ok((await member.get('/notifications')).json.notifications.some((n) => n.type === 'watched_update' && n.entityId === t.id), 'but it is in the Inbox');
+  await admin.del(`/tasks/${t.id}`);
 });
 
 // ------------------------------------------------------------------ removing people

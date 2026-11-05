@@ -156,6 +156,15 @@ A running log of what has been built and how. Newest entries at the bottom.
   - **Setup safeguard:** new `SETUP_EMAIL` setting (code in `server/config.js` and `server/routes/auth.js`, covered by a test; 41 tests pass). Only that address can complete first-run setup, so nobody can claim the admin account during the window before you do. On the server it is set to the same address as `SMTP_USER`.
 - **Next:** open https://msforge.denzelchiu.me, create the admin account with the emailed code, then invite the team.
 
+## 13. New members choose their notifications first (done)
+**What:** Anyone who joins is taken straight to **Settings, Profile & notifications** before anything else, to decide how much email they want.
+**How:**
+- New accounts (invite sign-up, and a brand-new workspace's first admin) are created with `prefs.onboarded = false` and a quieter default: **email for every change on a watched task is off** (it still appears in the Inbox). Constant `NEW_USER_PREFS` in `server/routes/auth.js`.
+- On load (`public/js/main.js`), a signed-in person with `onboarded === false` is sent to `#/settings/profile`. They stay redirected on every visit until they press **Continue to Forge**, so closing the tab mid-way does not skip it, and it follows them across devices because the flag is stored on their account.
+- The Settings page shows a **Welcome** card with three one-click starting points: **Quiet** (email only for mentions, replies and assignments), **Balanced** (also due dates, but not every change on watched tasks), **Everything**. The notification table below can be fine-tuned, and **Continue to Forge** saves `onboarded = true` and opens Home. In-app notifications stay on for everything in all presets.
+- Existing accounts have no flag, so they are never redirected.
+- **Tests:** 1 new test and 3 new checks (47 passing): new accounts carry the flag and quieter defaults, finishing flips only the flag, and a watched-task change reaches the Inbox without queuing an email. Also tried the real invite flow on the demo workspace: invite, join with a code, land on the welcome card, pick Quiet, Continue, reload stays on Home.
+
 ## 12. Milestones complete and reopen automatically (done)
 **What:** A milestone is **complete** when it has tasks and every one of them (subtasks included) is done. If a task moves back out of done, a new open task is added, or an open task is linked, the milestone goes back to **open**.
 **How:**

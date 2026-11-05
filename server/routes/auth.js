@@ -17,6 +17,14 @@ const pickColor = () => COLORS[Math.floor(Math.random() * COLORS.length)];
 const email = z.string().trim().toLowerCase().email().max(200);
 const code = z.string().trim().regex(/^\d{6}$/, 'enter the 6-digit code');
 
+/**
+ * Brand-new accounts start a little quieter and are sent to the notification settings first
+ * (`onboarded: false` until they press Continue there). Everything still lands in the in-app
+ * Inbox; only the email for every change on watched tasks is off until they choose otherwise.
+ * Accounts created before this existed have no flag and are never redirected.
+ */
+const NEW_USER_PREFS = { onboarded: false, notify: { watched_update: { inapp: true, email: false } } };
+
 async function startSession(res, userId) {
   const { token, expires } = await sessions.createSession(userId);
   sessions.setCookie(res, token, expires);
@@ -136,7 +144,7 @@ router.post('/auth/setup', wrap(async (req, res) => {
   const user = await work(async (tx) => {
     await tx.$executeRaw`LOCK TABLE "User" IN EXCLUSIVE MODE`; // two simultaneous setups cannot both win
     if ((await tx.user.count()) > 0) throw forbidden('Setup has already been completed');
-    const u = await tx.user.create({ data: { email: body.email, name: body.name, role: 'admin', color: pickColor() } });
+    const u = await tx.user.create({ data: { email: body.email, name: body.name, role: 'admin', color: pickColor(), prefs: NEW_USER_PREFS } });
     const project = await tx.project.create({
       data: {
         name: body.projectName, key: body.projectKey,
@@ -193,7 +201,7 @@ router.post('/invites/accept', wrap(async (req, res) => {
     if (!fresh) throw bad('This invite is invalid or has expired');
     if (await tx.user.findUnique({ where: { email: addr } })) throw bad('An account with this email already exists');
     await tx.invite.update({ where: { id: inv.id }, data: { acceptedAt: new Date() } });
-    const u = await tx.user.create({ data: { email: addr, name: body.name, role: inv.role, color: pickColor() } });
+    const u = await tx.user.create({ data: { email: addr, name: body.name, role: inv.role, color: pickColor(), prefs: NEW_USER_PREFS } });
     await audit(tx, u.id, 'user.join', 'user', u.id, null, { email: u.email, role: u.role });
     after(() => realtime.broadcast('user.joined', { user: S.user(u) }));
     return u;

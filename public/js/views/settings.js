@@ -13,7 +13,14 @@ const COLORS = ['#0f9d92', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#0ea5e9'
 function profile() {
   const me = S.me; const prefs = me.prefs?.notify || {};
   const pref = (t, k) => (prefs[t]?.[k] ?? true);
-  return h`<section class="card"><div class="card-h"><h3>Profile</h3></div><div class="card-b">
+  const newcomer = me.prefs?.onboarded === false; // a brand-new account that has not chosen yet
+  const welcome = newcomer ? h`<section class="card" style="border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-50);margin-bottom:18px"><div class="card-b">
+      <h2 style="font-size:20px;margin-bottom:6px">Welcome to Forge, ${me.name.split(' ')[0]}</h2>
+      <p class="muted" style="margin:0 0 14px">Before you start, choose how much email you want. Everything always appears in your Inbox inside Forge; this is only about your email. You can change it any time in Settings.</p>
+      <div class="grid g3" style="gap:10px">${PRESETS.map((p) => h`<button class="card" style="padding:12px 14px;text-align:left;font:inherit;cursor:pointer" data-act="me-preset" data-p="${p.key}"><b>${p.name}</b><div class="muted sm" style="margin-top:2px">${p.text}</div></button>`)}</div>
+      <p class="hint" style="margin:12px 0 0">Pick a starting point, fine-tune the table below if you like, then continue.</p>
+      <div class="row" style="margin-top:12px"><button class="btn primary" data-act="me-finish">Continue to Forge</button></div></div></section>` : '';
+  return h`${welcome}<section class="card"><div class="card-h"><h3>Profile</h3></div><div class="card-b">
       <div class="row" style="margin-bottom:16px">${avatar(me, 56)}<div><b>${me.name}</b><div class="muted sm">${me.email} · ${me.role}</div></div></div>
       <div class="field"><label>Display name</label><input class="input" style="max-width:340px" data-change="me-name" value="${me.name}" maxlength="100"></div>
       <div class="field"><label>Colour</label><div class="row wrap">${COLORS.map((c) => h`<button class="swatch ${c === me.color ? 'on' : ''}" style="background:${c}" data-act="me-color" data-c="${c}" aria-label="Colour ${c}"></button>`)}</div></div>
@@ -32,6 +39,23 @@ C['me-notify'] = async (el) => {
   const notify = JSON.parse(JSON.stringify(S.me.prefs?.notify || {}));
   notify[el.dataset.t] = { ...(notify[el.dataset.t] || {}), [el.dataset.k]: el.checked };
   S.me = await patch('/me', { prefs: { ...(S.me.prefs || {}), notify } }); changed();
+};
+// One-click starting points for email. In-app notifications stay on for everything.
+const PRESETS = [
+  { key: 'quiet', name: 'Quiet', text: 'Email me only when someone mentions me, replies to me, or assigns me a task.', email: { mention: true, reply: true, assigned: true, watched_update: false, due_soon: false, overdue: false } },
+  { key: 'balanced', name: 'Balanced', text: 'Also email me about due dates, but not every change on tasks I watch.', email: { mention: true, reply: true, assigned: true, watched_update: false, due_soon: true, overdue: true } },
+  { key: 'everything', name: 'Everything', text: 'Email me about every kind of update.', email: { mention: true, reply: true, assigned: true, watched_update: true, due_soon: true, overdue: true } },
+];
+A['me-preset'] = async (el) => {
+  const p = PRESETS.find((x) => x.key === el.dataset.p);
+  const notify = {};
+  for (const [t] of NOTIFY) notify[t] = { inapp: true, email: p.email[t] };
+  S.me = await patch('/me', { prefs: { ...(S.me.prefs || {}), notify } }); changed();
+  toast(`${p.name} notification settings applied`);
+};
+A['me-finish'] = async () => {
+  S.me = await patch('/me', { prefs: { ...(S.me.prefs || {}), onboarded: true } }); changed();
+  go('#/home');
 };
 A['me-logout-others'] = async () => { const r = await post('/auth/logout-others'); toast(`Signed out ${r.ended} other session${r.ended === 1 ? '' : 's'}`); };
 

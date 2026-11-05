@@ -41,6 +41,8 @@ async function start() {
   await loadAll();
   connect();
   mountShell();
+  // Brand-new people choose their notification settings before anything else (until they press Continue there)
+  if (S.me.prefs?.onboarded === false && !/^#\/settings/.test(location.hash)) history.replaceState(null, '', '#/settings/profile');
   await render();
 }
 async function boot() {
