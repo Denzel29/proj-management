@@ -1,7 +1,7 @@
 // Task slide-over: properties, description, attachments, subtasks, links, comments, time, activity.
 import { get, post, patch, del, upload } from './api.js';
 import { S, user, status, label, sprint, milestone, task, childrenOf, activeUsers, canWrite, isAdmin, isDone, firstTodo, doneStatus, saveTask, createTask, removeTasks, onLiveEvent, changed, isFavorite, toggleFavorite, visit } from './store.js';
-import { h, raw, icon, esc, avatar, avatarOf, typeIcon, TYPE, priorityPill, statusPill, labelChip, ring, fmtDate, fmtDue, fmtDateTime, timeAgo, fmtMinutes, parseDuration, fileSize, toast, openMenu, confirmDialog, copyText, taskProgress, today } from './ui.js';
+import { h, raw, icon, esc, avatar, avatarOf, typeIcon, TYPE, priorityPill, statusPill, labelChip, ring, fmtDate, fmtDue, fmtDateTime, timeAgo, fmtMinutes, parseDuration, fileSize, toast, openMenu, confirmDialog, copyText, taskProgress, today, debounce } from './ui.js';
 import { renderMd, toggleCheckbox } from './md.js';
 import { A, C, K, DRAG, go } from './actions.js';
 import { newTaskModal } from './forms.js';
@@ -21,17 +21,20 @@ async function loadDetail(id) {
   } catch { if (D.taskId === id) D.loaded = true; }
   changed();
 }
-const reloadComments = async () => { if (!D.taskId) return; D.comments = await get(`/comments?targetType=task&targetId=${D.taskId}`); changed(); };
-const reloadFiles = async () => { if (!D.taskId) return; D.files = await get(`/attachments?targetType=task&targetId=${D.taskId}`); changed(); };
-const reloadDetail = async () => { if (!D.taskId) return; D.detail = await get(`/tasks/${D.taskId}`); changed(); };
+// Each reload only refreshes the screen when something actually changed, so quiet echoes of our own saves cause no flicker.
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const reloadComments = async () => { const id = D.taskId; if (!id) return; const v = await get(`/comments?targetType=task&targetId=${id}`); if (D.taskId !== id || same(v, D.comments)) return; D.comments = v; changed(); };
+const reloadFiles = async () => { const id = D.taskId; if (!id) return; const v = await get(`/attachments?targetType=task&targetId=${id}`); if (D.taskId !== id || same(v, D.files)) return; D.files = v; changed(); };
+const reloadDetail = async () => { const id = D.taskId; if (!id) return; const v = await get(`/tasks/${id}`); if (D.taskId !== id || same(v, D.detail)) return; D.detail = v; changed(); };
+const reloadDetailSoon = debounce(reloadDetail, 300); // several live events in a row become one reload
 
 // keep open drawer current when teammates act
 onLiveEvent((ev) => {
   if (!D.taskId) return;
   if (ev.type.startsWith('comment.') && (ev.targetType === 'task' ? ev.targetId : ev.comment?.targetId) === D.taskId) reloadComments();
   else if (ev.type === 'attachment.changed' && ev.targetId === D.taskId) reloadFiles();
-  else if ((ev.type === 'task.linked' || ev.type === 'task.unlinked') ) reloadDetail();
-  else if (ev.type === 'task.updated' && ev.task.id === D.taskId) reloadDetail();
+  else if (ev.type === 'task.linked' || ev.type === 'task.unlinked') reloadDetailSoon();
+  else if (ev.type === 'task.updated' && ev.task.id === D.taskId) reloadDetailSoon();
 });
 
 // ------------------------------------------------------------ rendering

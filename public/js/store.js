@@ -101,7 +101,11 @@ function upsert(arr, item) {
 }
 
 // ---------------------------------------------------------------- tasks
-export function upsertTask(t) { upsert(S.tasks, t); reindex(); changed(); }
+export function upsertTask(t) {
+  const cur = task(t.id);
+  if (cur && JSON.stringify(cur) === JSON.stringify(t)) return; // nothing new (e.g. the live echo of our own save): skip a pointless refresh
+  upsert(S.tasks, t); reindex(); changed();
+}
 export function removeTasks(ids) { const s = new Set(ids); S.tasks = S.tasks.filter((t) => !s.has(t.id)); reindex(); changed(); }
 
 const saveQueue = new Map();
@@ -145,6 +149,10 @@ export function upsertLocal(kind, obj) {
   const arr = { sprints: S.sprints, milestones: S.milestones, labels: S.labels, templates: S.templates, pages: S.pages }[kind];
   if (!arr) return;
   const slim = kind === 'pages' ? { id: obj.id, title: obj.title, icon: obj.icon, parentId: obj.parentId, position: obj.position, updatedAt: obj.updatedAt } : obj;
+  if (kind === 'pages') { // saving page text only changes updatedAt, which nothing on screen needs: no refresh
+    const cur = arr.find((x) => x.id === slim.id);
+    if (cur && cur.title === slim.title && cur.icon === slim.icon && cur.parentId === slim.parentId && cur.position === slim.position) { cur.updatedAt = slim.updatedAt; return; }
+  }
   upsert(arr, slim); reindex(); changed();
 }
 export function removeLocal(kind, id) {
@@ -201,7 +209,7 @@ function applyEvent(ev) {
     case 'user.removed': S.users = S.users.filter((u) => u.id !== ev.id); reindex(); changed(); break;
     case 'project.updated': S.project = { ...S.project, ...ev.project }; changed(); break;
     case 'user.joined': case 'user.updated': upsert(S.users, ev.user); if (ev.user.id === S.me.id) S.me = ev.user; reindex(); changed(); break;
-    case 'page.created': case 'page.updated': upsert(S.pages, { id: ev.page.id, title: ev.page.title, icon: ev.page.icon, parentId: ev.page.parentId, position: ev.page.position, updatedAt: ev.page.updatedAt }); reindex(); changed(); break;
+    case 'page.created': case 'page.updated': upsertLocal('pages', ev.page); break; // skips the refresh when only the text changed
     case 'page.deleted': S.pages = S.pages.filter((p) => !ev.ids.includes(p.id)); reindex(); changed(); break;
     case 'notification':
       S.unread++; if (S.notifications) S.notifications.unshift(ev.notification);

@@ -166,8 +166,10 @@ async function renderDrawer() {
   if (!ui.taskId) { if (root.innerHTML) { root.innerHTML = ''; (await import('./drawer.js')).drawerClosed(); } return; }
   const d = await import('./drawer.js');
   const prevScroll = $('.drawer-body')?.scrollTop || 0;
+  const wasOpen = !!root.querySelector('.drawer');
   const out = d.drawer(ui.taskId);
   root.innerHTML = String(out.html);
+  if (wasOpen) root.querySelectorAll('.drawer, .drawer-backdrop').forEach((el) => el.classList.add('still'));
   const body = $('.drawer-body'); if (body) body.scrollTop = prevScroll;
   out.after?.(root);
 }
