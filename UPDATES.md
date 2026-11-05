@@ -148,4 +148,10 @@ A running log of what has been built and how. Newest entries at the bottom.
   - `deploy/Caddyfile.snippet`: the block to add to Caddy for `msforge.denzelchiu.me`.
   - `package.json`: `prisma` moved to runtime dependencies so the container can run migrations.
 - **On the server:** `.env` was created with a generated database password (mode 600, never shown or committed). Containers were built and started: both healthy, migrations `init` and `drop_mention` applied, and the app answers on `forge-app:3000` from inside the Caddy container. The apptracker containers kept running throughout.
-- **Still to do:** (1) DNS `A` record `msforge.denzelchiu.me` to `62.171.178.11`; (2) fill `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` in `~/forge/.env` on the server and recreate the app container; (3) add the Caddy block and reload it (graceful, no downtime), then check HTTPS; (4) first-run setup at the live address.
+- **Going live:**
+  - **DNS (Namecheap):** an `A` record `msforge` to `62.171.178.11`. It sits beside the existing `apptracker` record with no conflict: Caddy picks the app by hostname.
+  - **Caddy:** the Forge block was appended to `~/apptracker/Deploy/Caddyfile` after a timestamped backup (`Caddyfile.bak-...`), validated, then reloaded gracefully. Let's Encrypt issued the certificate for `msforge.denzelchiu.me`. apptracker's two addresses answered the same before and after.
+  - **Verified over HTTPS:** health check OK, HTTP redirects to HTTPS, the WebSocket endpoint refuses anonymous connections.
+  - **Email:** SMTP settings are in the server `.env`; a login test from inside the container succeeded (authentication only, no mail sent).
+  - **Setup safeguard:** new `SETUP_EMAIL` setting (code in `server/config.js` and `server/routes/auth.js`, covered by a test; 41 tests pass). Only that address can complete first-run setup, so nobody can claim the admin account during the window before you do. On the server it is set to the same address as `SMTP_USER`.
+- **Next:** open https://msforge.denzelchiu.me, create the admin account with the emailed code, then invite the team.
